@@ -24,7 +24,7 @@ DateTime(y, m, d, h, mi, s, ms) =
 const EOF_CHAR = typemax(Char)
 
 const TOMLDict  = Dict{String, Any}
-const TOMLArray = Vector{Any}
+const TOMLArray = Vector
 
 
 ##########
@@ -517,10 +517,9 @@ function parse_array_table(l)::Union{Nothing, ParserError}
         return ParserError(ErrArrayTreatedAsDictionary)
     end
     d_new = TOMLDict()
-    push!(old, d_new)
+    old = push!!(old, d_new)
     push!(l.defined_tables, d_new)
     l.active_table = d_new
-
     return
 end
 
@@ -635,19 +634,43 @@ end
 # Array #
 #########
 
+function push!!(v::Vector, el)
+    T = eltype(v)
+    if el isa T || typeof(el) === T
+        push!(v, el::T)
+        return v
+    else
+        if typeof(T) === Union
+            newT = Base.typejoin(T, typeof(el))
+        else
+            newT = Union{T, typeof(el)}
+        end
+        new = Array{newT}(undef, length(v))
+        copy!(new, v)
+        return push!!(new, el)
+    end
+end
+
 function parse_array(l::Parser)::Err{TOMLArray}
-    array = Any[]
-    push!(l.static_arrays, array)
+    array = Union{}[]
+    # push!(l.static_arrays, array)
     skip_ws_nl(l)
-    accept(l, ']') && return array
+    if accept(l, ']')
+        push!(l.static_arrays, array)
+        return array
+    end
     while true
         v = @try parse_value(l)
-        push!(array, v)
+        array = push!!(array, v)
+        #push!(array, v)
         # There can be an arbitrary number of newlines and comments before a value and before the closing bracket.
         skip_ws_nl(l)
         comma = accept(l, ',')
         skip_ws_nl(l)
-        accept(l, ']') && return array
+        if accept(l, ']')
+            push!(l.static_arrays, array)
+            return array
+        end
         if !comma
             return ParserError(ErrExpectedCommaBetweenItemsArray)
         end
